@@ -51,12 +51,12 @@ type UserDetailsResponse struct {
 }
 
 var (
-	currentConnections = promauto.NewGaugeVec(
+	currentTrainStatuses = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "traewelling_current_connections",
-			Help: "Anzahl der aktuellen Verbindungen pro Benutzer",
+			Name: "traewelling_current_train_statuses",
+			Help: "Anzahl der aktuellen Züge eines Benutzers",
 		},
-		[]string{"username"},
+		[]string{"username", "line_name", "origin", "destination"},
 	)
 	totalTrainDistance = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -86,31 +86,31 @@ func fetchStatuses(username string) (*StatusResponse, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Fehler beim Erstellen der Anfrage: %v", err)
-	}
+        return nil, fmt.Errorf("Fehler beim Erstellen der Anfrage: %v", err)
+    }
 
 	token := os.Getenv("TRAEWELLING_TOKEN")
 	if token == "" {
-		return nil, fmt.Errorf("TRAEWELLING_TOKEN ist nicht gesetzt")
-	}
+	    return nil, fmt.Errorf("TRAEWELLING_TOKEN ist nicht gesetzt")
+    }
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Fehler beim Senden der Anfrage für Benutzer '%s': %v", username, err)
-	}
+	    return nil, fmt.Errorf("Fehler beim Senden der Anfrage für Benutzer '%s': %v", username, err)
+    }
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Fehlerhafte Antwort für Benutzer '%s': %d", username, resp.StatusCode)
-	}
+	    return nil, fmt.Errorf("Fehlerhafte Antwort für Benutzer '%s': %d", username, resp.StatusCode)
+    }
 
 	var apiResponse StatusResponse
 	err = json.NewDecoder(resp.Body).Decode(&apiResponse)
 	if err != nil {
-		return nil, fmt.Errorf("Fehler beim Parsen der JSON-Daten für Benutzer '%s': %v", username, err)
-	}
+	    return nil, fmt.Errorf("Fehler beim Parsen der JSON-Daten für Benutzer '%s': %v", username, err)
+    }
 
 	return &apiResponse, nil
 }
@@ -120,31 +120,31 @@ func fetchUserDetails(username string) (*UserDetailsResponse, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, fmt.Errorf("Fehler beim Erstellen der Benutzerdetail Anfrage: %v", err)
-	}
+	    return nil, fmt.Errorf("Fehler beim Erstellen der Benutzerdetail Anfrage: %v", err)
+    }
 
 	token := os.Getenv("TRAEWELLING_TOKEN")
 	if token == "" {
-		return nil, fmt.Errorf("TRAEWELLING_TOKEN ist nicht gesetzt")
-	}
+	    return nil, fmt.Errorf("TRAEWELLING_TOKEN ist nicht gesetzt")
+    }
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("Fehler beim Senden der Benutzerdetail Anfrage für Benutzer '%s': %v", username, err)
-	}
+	    return nil, fmt.Errorf("Fehler beim Senden der Benutzerdetail Anfrage für Benutzer '%s': %v", username, err)
+    }
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Fehlerhafte Benutzerdetail Antwort für Benutzer '%s': %d", username, resp.StatusCode)
-	}
+	    return nil, fmt.Errorf("Fehlerhafte Benutzerdetail Antwort für Benutzer '%s': %d", username, resp.StatusCode)
+    }
 
 	var apiResponse UserDetailsResponse
 	err = json.NewDecoder(resp.Body).Decode(&apiResponse)
 	if err != nil {
-		return nil, fmt.Errorf("Fehler beim Parsen der JSON-Daten der Benutzerdetails für Benutzer '%s': %v", username, err)
-	}
+	    return nil, fmt.Errorf("Fehler beim Parsen der JSON-Daten der Benutzerdetails für Benutzer '%s': %v", username, err)
+    }
 
 	return &apiResponse, nil
 }
@@ -152,17 +152,25 @@ func fetchUserDetails(username string) (*UserDetailsResponse, error) {
 func updateMetricsForUser(username string) {
 	statusData, err := fetchStatuses(username)
 	if err != nil {
-		log.Printf("Fehler beim Abrufen der Statusdaten für Benutzer '%s': %v\n", username, err)
-		return
-	}
+	    log.Printf("Fehler beim Abrufen der Statusdaten für Benutzer '%s': %v\n", username, err)
+	    return
+    }
 
 	userDetails, err := fetchUserDetails(username)
 	if err != nil {
-		log.Printf("Fehler beim Abrufen der Benutzerdetails für Benutzer '%s': %v\n", username, err)
-		return
-	}
+	    log.Printf("Fehler beim Abrufen der Benutzerdetails für Benutzer '%s': %v\n", username, err)
+	    return
+    }
 
-	currentConnections.WithLabelValues(username).Set(float64(len(statusData.Data)))
+	for _, trip := range statusData.Data {
+        currentTrainStatuses.WithLabelValues(
+            username,
+            trip.Train.LineName,
+            trip.Train.Origin.Name,
+            trip.Train.Destination.Name,
+        ).Set(1) // Jede aktive Verbindung wird als 1 gesetzt
+    }
+
 	totalTrainDistance.WithLabelValues(username).Set(float64(userDetails.Data.TrainDistance) / 1000)
 	totalTrainDuration.WithLabelValues(username).Set(float64(userDetails.Data.TrainDuration))
 	totalPoints.WithLabelValues(username).Set(float64(userDetails.Data.Points))
@@ -174,23 +182,23 @@ func updateMetricsForUser(username string) {
 func updateMetrics() {
 	usernames := os.Getenv("TRAEWELLING_USERNAMES")
 	if usernames == "" {
-		log.Println("TRAEWELLING_USERNAMES ist nicht gesetzt")
-		return
-	}
+	    log.Println("TRAEWELLING_USERNAMES ist nicht gesetzt")
+	    return
+    }
 
 	for _, username := range strings.Split(usernames, ",") {
-		username = strings.TrimSpace(username)
-		updateMetricsForUser(username)
-	}
+	    username = strings.TrimSpace(username)
+	    updateMetricsForUser(username)
+    }
 }
 
 func main() {
 	go func() {
-		for {
-			updateMetrics()
-			time.Sleep(5 * time.Minute)
-		}
-	}()
+	    for {
+	        updateMetrics()
+	        time.Sleep(5 * time.Minute) // Aktualisierung alle 5 Minuten
+	    }
+    }()
 
 	http.Handle("/metrics", promhttp.Handler())
 	fmt.Println("Server läuft auf Port 8080...")
