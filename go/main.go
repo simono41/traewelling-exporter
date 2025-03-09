@@ -12,40 +12,58 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-var (
-	totalTrips = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "traewelling_total_trips",
-		Help: "Gesamtanzahl der Fahrten",
-	})
-	totalDistance = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "traewelling_total_distance_km",
-		Help: "Gesamtdistanz aller Fahrten in Kilometern",
-	})
-	averageDuration = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "traewelling_average_duration_minutes",
-		Help: "Durchschnittliche Dauer der Fahrten in Minuten",
-	})
-)
-
 type DashboardResponse struct {
 	Data []struct {
 		ID    int `json:"id"`
+		User  struct {
+			DisplayName string `json:"displayName"`
+			Username    string `json:"username"`
+		} `json:"userDetails"`
 		Train struct {
 			Trip      int     `json:"trip"`
-			Distance  float64 `json:"distance"`
-			Duration  int     `json:"duration"`
 			Category  string  `json:"category"`
 			LineName  string  `json:"lineName"`
 			JourneyNumber int `json:"journeyNumber"`
+			Distance  float64 `json:"distance"`
+			Duration  int     `json:"duration"`
+			Points    int     `json:"points"`
 			Origin    struct {
-				Name string `json:"name"`
+				Name             string `json:"name"`
+				DeparturePlanned string `json:"departurePlanned"`
+				DepartureReal    string `json:"departureReal"`
 			} `json:"origin"`
 			Destination struct {
-				Name string `json:"name"`
+				Name           string `json:"name"`
+				ArrivalPlanned string `json:"arrivalPlanned"`
+				ArrivalReal    string `json:"arrivalReal"`
 			} `json:"destination"`
 		} `json:"train"`
 	} `json:"data"`
 }
+
+var (
+	totalTripDuration = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "traewelling_total_trip_duration_minutes",
+			Help: "Gesamtfahrzeit eines Benutzers in Minuten",
+		},
+		[]string{"username"},
+	)
+	totalTripPoints = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "traewelling_total_trip_points",
+			Help: "Gesamtpunkte eines Benutzers",
+		},
+		[]string{"username"},
+	)
+	totalTripDistance = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "traewelling_total_trip_distance_km",
+			Help: "Gesamtentfernung eines Benutzers in Kilometern",
+		},
+		[]string{"username"},
+	)
+)
 
 func fetchTraewellingData() (*DashboardResponse, error) {
 	url := "https://traewelling.de/api/v1/dashboard"
@@ -81,35 +99,60 @@ func fetchTraewellingData() (*DashboardResponse, error) {
 	return &apiResponse, nil
 }
 
+func processAndPrintTripDetails(data *DashboardResponse) {
+	fmt.Println("Fahrtdetails der Benutzer:")
+	fmt.Println("==========================")
+
+	userStats := make(map[string]struct {
+		TotalDuration float64
+		TotalPoints   int
+		TotalDistance float64
+	})
+
+	for _, trip := range data.Data {
+		fmt.Printf("Benutzer: %s (@%s)\n", trip.User.DisplayName, trip.User.Username)
+		fmt.Printf("Fahrt-ID: %d\n", trip.Train.Trip)
+		fmt.Printf("Kategorie: %s\n", trip.Train.Category)
+		fmt.Printf("Linie: %s (Nummer: %d)\n", trip.Train.LineName, trip.Train.JourneyNumber)
+		fmt.Printf("Startbahnhof: %s\n", trip.Train.Origin.Name)
+		fmt.Printf("\tGeplante Abfahrt: %s\n", trip.Train.Origin.DeparturePlanned)
+		fmt.Printf("\tTatsächliche Abfahrt: %s\n", trip.Train.Origin.DepartureReal)
+		fmt.Printf("Zielbahnhof: %s\n", trip.Train.Destination.Name)
+		fmt.Printf("\tGeplante Ankunft: %s\n", trip.Train.Destination.ArrivalPlanned)
+		fmt.Printf("\tTatsächliche Ankunft: %s\n", trip.Train.Destination.ArrivalReal)
+		fmt.Printf("Dauer: %d Minuten\n", trip.Train.Duration)
+		fmt.Printf("Entfernung: %.2f km\n", trip.Train.Distance/1000)
+		fmt.Printf("Punkte: %d\n", trip.Train.Points)
+		fmt.Println("--------------------------")
+
+		stats := userStats[trip.User.Username]
+		stats.TotalDuration += float64(trip.Train.Duration)
+		stats.TotalPoints += trip.Train.Points
+		stats.TotalDistance += trip.Train.Distance / 1000
+		userStats[trip.User.Username] = stats
+	}
+
+	for username, stats := range userStats {
+		totalTripDuration.WithLabelValues(username).Set(stats.TotalDuration)
+		totalTripPoints.WithLabelValues(username).Set(float64(stats.TotalPoints))
+		totalTripDistance.WithLabelValues(username).Set(stats.TotalDistance)
+	}
+}
+
 func updateMetrics() {
 	data, err := fetchTraewellingData()
 	if err != nil {
 		fmt.Printf("Fehler beim Abrufen der Daten: %v\n", err)
 		return
 	}
-
-	var totalTripsCount int
-	var totalDistanceSum float64
-	var totalDurationSum int
-
-	for _, trip := range data.Data {
-		totalTripsCount++
-		totalDistanceSum += trip.Train.Distance / 1000
-		totalDurationSum += trip.Train.Duration
-	}
-
-	totalTrips.Set(float64(totalTripsCount))
-	totalDistance.Set(totalDistanceSum)
-	if totalTripsCount > 0 {
-		averageDuration.Set(float64(totalDurationSum) / float64(totalTripsCount))
-	}
+	processAndPrintTripDetails(data)
 }
 
 func main() {
 	go func() {
 		for {
 			updateMetrics()
-			time.Sleep(30 * time.Second)
+			time.Sleep(5 * time.Minute)
 		}
 	}()
 
