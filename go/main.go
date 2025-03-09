@@ -54,7 +54,7 @@ var (
 	currentTrainStatuses = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "traewelling_current_train_statuses",
-			Help: "Anzahl der aktuellen Züge eines Benutzers",
+			Help: "Zeigt an, ob ein Zug aktiv ist (1 = aktiv, 0 = inaktiv)",
 		},
 		[]string{"username", "line_name", "origin", "destination"},
 	)
@@ -149,6 +149,24 @@ func fetchUserDetails(username string) (*UserDetailsResponse, error) {
 	return &apiResponse, nil
 }
 
+func isTrainActive(departureTimeStr, arrivalTimeStr string) bool {
+	now := time.Now()
+
+	departureTime, err := time.Parse(time.RFC3339, departureTimeStr)
+	if err != nil {
+	    log.Printf("Fehler beim Parsen der Abfahrtszeit: %v\n", err)
+	    return false
+    }
+
+	arrivalTime, err := time.Parse(time.RFC3339, arrivalTimeStr)
+	if err != nil {
+	    log.Printf("Fehler beim Parsen der Ankunftszeit: %v\n", err)
+	    return false
+    }
+
+	return now.After(departureTime) && now.Before(arrivalTime)
+}
+
 func updateMetricsForUser(username string) {
 	statusData, err := fetchStatuses(username)
 	if err != nil {
@@ -163,12 +181,14 @@ func updateMetricsForUser(username string) {
     }
 
 	for _, trip := range statusData.Data {
+        active := isTrainActive(trip.Train.Origin.DepartureReal, trip.Train.Destination.ArrivalReal)
+
         currentTrainStatuses.WithLabelValues(
             username,
             trip.Train.LineName,
             trip.Train.Origin.Name,
             trip.Train.Destination.Name,
-        ).Set(1) // Jede aktive Verbindung wird als 1 gesetzt
+        ).Set(func() float64 { if active { return 1 } else { return 0 } }())
     }
 
 	totalTrainDistance.WithLabelValues(username).Set(float64(userDetails.Data.TrainDistance) / 1000)
