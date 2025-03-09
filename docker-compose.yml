@@ -10,6 +10,7 @@ services:
     restart: always # Neustart bei Fehlern oder Updates
     environment:
       - TRAEWELLING_TOKEN=${TRAEWELLING_TOKEN}
+      - TRAEWELLING_USERNAMES=${TRAEWELLING_USERNAMES}
     networks:
       default:
       dns:
