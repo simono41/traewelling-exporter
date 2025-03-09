@@ -150,7 +150,9 @@ func fetchUserDetails(username string) (*UserDetailsResponse, error) {
 }
 
 func isTrainActive(departureTimeStr, arrivalTimeStr string) bool {
-	now := time.Now()
+	if departureTimeStr == "" || arrivalTimeStr == "" { // Überprüfe auf leere Zeitstrings
+	    return false
+    }
 
 	departureTime, err := time.Parse(time.RFC3339, departureTimeStr)
 	if err != nil {
@@ -164,6 +166,7 @@ func isTrainActive(departureTimeStr, arrivalTimeStr string) bool {
 	    return false
     }
 
+	now := time.Now()
 	return now.After(departureTime) && now.Before(arrivalTime)
 }
 
