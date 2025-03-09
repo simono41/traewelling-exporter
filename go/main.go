@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -25,9 +26,6 @@ type StatusResponse struct {
 			Category  string  `json:"category"`
 			LineName  string  `json:"lineName"`
 			JourneyNumber int `json:"journeyNumber"`
-			Distance  float64 `json:"distance"`
-			Duration  int     `json:"duration"`
-			Points    int     `json:"points"`
 			Origin    struct {
 				Name             string `json:"name"`
 				DeparturePlanned string `json:"departurePlanned"`
@@ -42,25 +40,42 @@ type StatusResponse struct {
 	} `json:"data"`
 }
 
+type UserDetailsResponse struct {
+	Data struct {
+		ID            int    `json:"id"`
+		Username      string `json:"username"`
+		TrainDistance int    `json:"trainDistance"`
+		TrainDuration int    `json:"trainDuration"`
+		Points        int    `json:"points"`
+	} `json:"data"`
+}
+
 var (
-	totalTripDuration = promauto.NewGaugeVec(
+	currentConnections = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "traewelling_total_trip_duration_minutes",
-			Help: "Gesamtfahrzeit eines Benutzers in Minuten",
+			Name: "traewelling_current_connections",
+			Help: "Anzahl der aktuellen Verbindungen pro Benutzer",
 		},
 		[]string{"username"},
 	)
-	totalTripPoints = promauto.NewGaugeVec(
+	totalTrainDistance = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "traewelling_total_trip_points",
+			Name: "traewelling_total_train_distance_km",
+			Help: "Gesamte Zugstrecke eines Benutzers in Kilometern",
+		},
+		[]string{"username"},
+	)
+	totalTrainDuration = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "traewelling_total_train_duration_minutes",
+			Help: "Gesamte Zugdauer eines Benutzers in Minuten",
+		},
+		[]string{"username"},
+	)
+	totalPoints = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "traewelling_total_points",
 			Help: "Gesamtpunkte eines Benutzers",
-		},
-		[]string{"username"},
-	)
-	totalTripDistance = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "traewelling_total_trip_distance_km",
-			Help: "Gesamtentfernung eines Benutzers in Kilometern",
 		},
 		[]string{"username"},
 	)
@@ -83,88 +98,101 @@ func fetchStatuses(username string) (*StatusResponse, error) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-        return nil, fmt.Errorf("Fehler beim Senden der Anfrage für Benutzer '%s': %v", username, err)
-    }
+		return nil, fmt.Errorf("Fehler beim Senden der Anfrage für Benutzer '%s': %v", username, err)
+	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-        return nil, fmt.Errorf("Fehlerhafte Antwort für Benutzer '%s': %d", username, resp.StatusCode)
-    }
+		return nil, fmt.Errorf("Fehlerhafte Antwort für Benutzer '%s': %d", username, resp.StatusCode)
+	}
 
 	var apiResponse StatusResponse
 	err = json.NewDecoder(resp.Body).Decode(&apiResponse)
 	if err != nil {
-        return nil, fmt.Errorf("Fehler beim Parsen der JSON-Daten für Benutzer '%s': %v", username, err)
-    }
+		return nil, fmt.Errorf("Fehler beim Parsen der JSON-Daten für Benutzer '%s': %v", username, err)
+	}
 
-    return &apiResponse, nil
+	return &apiResponse, nil
 }
 
-func processAndPrintTripDetails(username string, data *StatusResponse) {
-	fmt.Printf("Fahrtdetails für Benutzer '%s':\n", username)
-	fmt.Println("==========================")
+func fetchUserDetails(username string) (*UserDetailsResponse, error) {
+	url := fmt.Sprintf("https://traewelling.de/api/v1/user/%s", username)
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Fehler beim Erstellen der Benutzerdetail Anfrage: %v", err)
+	}
 
-	var totalDuration float64
-	var totalPoints int
-	var totalDistance float64
+	token := os.Getenv("TRAEWELLING_TOKEN")
+	if token == "" {
+		return nil, fmt.Errorf("TRAEWELLING_TOKEN ist nicht gesetzt")
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
 
-	for _, trip := range data.Data {
-        fmt.Printf("Fahrt-ID: %d\n", trip.Train.Trip)
-        fmt.Printf("Kategorie: %s\n", trip.Train.Category)
-        fmt.Printf("Linie: %s (Nummer: %d)\n", trip.Train.LineName, trip.Train.JourneyNumber)
-        fmt.Printf("Startbahnhof: %s\n", trip.Train.Origin.Name)
-        fmt.Printf("\tGeplante Abfahrt: %s\n", trip.Train.Origin.DeparturePlanned)
-        fmt.Printf("\tTatsächliche Abfahrt: %s\n", trip.Train.Origin.DepartureReal)
-        fmt.Printf("Zielbahnhof: %s\n", trip.Train.Destination.Name)
-        fmt.Printf("\tGeplante Ankunft: %s\n", trip.Train.Destination.ArrivalPlanned)
-        fmt.Printf("\tTatsächliche Ankunft: %s\n", trip.Train.Destination.ArrivalReal)
-        fmt.Printf("Dauer: %d Minuten\n", trip.Train.Duration)
-        fmt.Printf("Entfernung: %.2f km\n", trip.Train.Distance/1000)
-        fmt.Printf("Punkte: %d\n", trip.Train.Points)
-        fmt.Println("--------------------------")
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("Fehler beim Senden der Benutzerdetail Anfrage für Benutzer '%s': %v", username, err)
+	}
+	defer resp.Body.Close()
 
-        totalDuration += float64(trip.Train.Duration)
-        totalPoints += trip.Train.Points
-        totalDistance += trip.Train.Distance / 1000
-    }
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("Fehlerhafte Benutzerdetail Antwort für Benutzer '%s': %d", username, resp.StatusCode)
+	}
 
-	totalTripDuration.WithLabelValues(username).Set(totalDuration)
-	totalTripPoints.WithLabelValues(username).Set(float64(totalPoints))
-	totalTripDistance.WithLabelValues(username).Set(totalDistance)
+	var apiResponse UserDetailsResponse
+	err = json.NewDecoder(resp.Body).Decode(&apiResponse)
+	if err != nil {
+		return nil, fmt.Errorf("Fehler beim Parsen der JSON-Daten der Benutzerdetails für Benutzer '%s': %v", username, err)
+	}
 
-	fmt.Printf("\nGesamtfahrzeit für %s: %.2f Minuten\n", username, totalDuration)
-	fmt.Printf("Gesamtpunkte für %s: %d Punkte\n", username, totalPoints)
-	fmt.Printf("Gesamtentfernung für %s: %.2f km\n", username, totalDistance)
+	return &apiResponse, nil
+}
+
+func updateMetricsForUser(username string) {
+	statusData, err := fetchStatuses(username)
+	if err != nil {
+		log.Printf("Fehler beim Abrufen der Statusdaten für Benutzer '%s': %v\n", username, err)
+		return
+	}
+
+	userDetails, err := fetchUserDetails(username)
+	if err != nil {
+		log.Printf("Fehler beim Abrufen der Benutzerdetails für Benutzer '%s': %v\n", username, err)
+		return
+	}
+
+	currentConnections.WithLabelValues(username).Set(float64(len(statusData.Data)))
+	totalTrainDistance.WithLabelValues(username).Set(float64(userDetails.Data.TrainDistance) / 1000)
+	totalTrainDuration.WithLabelValues(username).Set(float64(userDetails.Data.TrainDuration))
+	totalPoints.WithLabelValues(username).Set(float64(userDetails.Data.Points))
+
+	log.Printf("Aktualisierte Metriken für Benutzer '%s'\n", username)
+
 }
 
 func updateMetrics() {
 	usernames := os.Getenv("TRAEWELLING_USERNAMES")
 	if usernames == "" {
-	    fmt.Println("TRAEWELLING_USERNAMES ist nicht gesetzt")
-	    return
-    }
+		log.Println("TRAEWELLING_USERNAMES ist nicht gesetzt")
+		return
+	}
 
 	for _, username := range strings.Split(usernames, ",") {
-	    username = strings.TrimSpace(username) // Entferne Leerzeichen
-	    data, err := fetchStatuses(username)
-	    if err != nil {
-	        fmt.Printf("Fehler beim Abrufen der Daten für Benutzer '%s': %v\n", username, err)
-	        continue
-	    }
-
-	    processAndPrintTripDetails(username, data)
-    }
+		username = strings.TrimSpace(username)
+		updateMetricsForUser(username)
+	}
 }
 
 func main() {
 	go func() {
-	    for {
-	        updateMetrics()
-	        time.Sleep(5 * time.Minute) // Aktualisierung alle 5 Minuten
-	    }
-    }()
+		for {
+			updateMetrics()
+			time.Sleep(5 * time.Minute)
+		}
+	}()
 
 	http.Handle("/metrics", promhttp.Handler())
 	fmt.Println("Server läuft auf Port 8080...")
-	http.ListenAndServe(":8080", nil)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
