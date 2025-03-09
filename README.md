@@ -2,23 +2,25 @@
 
 ## Beschreibung
 
-Dieser Prometheus Exporter sammelt Daten von der Träwelling API und stellt sie als Prometheus-Metriken zur Verfügung. Er bietet detaillierte Informationen über Fahrten, einschließlich Gesamtfahrzeit, Gesamtpunkte und Gesamtentfernung für jeden Benutzer.
+Dieser Prometheus Exporter sammelt Daten von der Träwelling API und stellt sie als Prometheus-Metriken bereit. Er bietet detaillierte Informationen über aktuelle Züge, Gesamtdistanz, Gesamtdauer und Gesamtpunkte für jeden Benutzer.
 
 ## Funktionen
 
-- Abfrage der Träwelling API für aktuelle Fahrtdaten
+- Abfrage der Träwelling API für aktuelle Zugdaten und Benutzerdetails
 - Bereitstellung von Prometheus-Metriken für:
-  - Gesamtfahrzeit pro Benutzer
+  - Aktuelle Zugstatus (aktiv/inaktiv)
+  - Gesamte Zugstrecke pro Benutzer
+  - Gesamte Zugdauer pro Benutzer
   - Gesamtpunkte pro Benutzer
-  - Gesamtentfernung pro Benutzer
-- Konsolenausgabe detaillierter Fahrtinformationen
+- Unterstützung für mehrere Benutzernamen
 - Regelmäßige Aktualisierung der Daten (alle 5 Minuten)
 
 ## Voraussetzungen
 
-- Go 1.15 oder höher
+- Go 1.20 oder höher
 - Docker und Docker Compose (für containerisierte Ausführung)
 - Gültiger Träwelling API-Token
+- Benutzernamen der zu überwachenden Nutzer
 
 ## Installation
 
@@ -35,9 +37,10 @@ Dieser Prometheus Exporter sammelt Daten von der Träwelling API und stellt sie 
    go get github.com/prometheus/client_golang/prometheus/promhttp
    ```
 
-3. Erstelle eine `.env` Datei im Projektverzeichnis und füge deinen Träwelling API-Token hinzu:
+3. Erstelle eine `.env` Datei im Projektverzeichnis und füge deine Umgebungsvariablen hinzu:
    ```
-   TRAEWELLING_TOKEN=your_token_here
+   TRAEWELLING_TOKEN=your_token
+   TRAEWELLING_USERNAMES=
    ```
 
 ## Ausführung
@@ -66,14 +69,9 @@ Dieser Prometheus Exporter sammelt Daten von der Träwelling API und stellt sie 
    docker-compose up -d
    ```
 
-## Verwendung
-
-Nach dem Start ist der Exporter unter `http://localhost:8080/metrics` erreichbar. Prometheus kann so konfiguriert werden, dass es diese Endpunkt abfragt.
-
 ## Prometheus Konfiguration
 
 Füge folgende Job-Konfiguration zu deiner `prometheus.yml` hinzu:
-
 ```
 scrape_configs:
   - job_name: 'traewelling'
@@ -83,9 +81,10 @@ scrape_configs:
 
 ## Metriken
 
-- `traewelling_total_trip_duration_minutes`: Gesamtfahrzeit eines Benutzers in Minuten
-- `traewelling_total_trip_points`: Gesamtpunkte eines Benutzers
-- `traewelling_total_trip_distance_km`: Gesamtentfernung eines Benutzers in Kilometern
+- `traewelling_current_train_statuses`: Aktueller Status eines Zuges (1 = aktiv, 0 = inaktiv)
+- `traewelling_total_train_distance_km`: Gesamte Zugstrecke eines Benutzers in Kilometern
+- `traewelling_total_train_duration_minutes`: Gesamte Zugdauer eines Benutzers in Minuten
+- `traewelling_total_points`: Gesamtpunkte eines Benutzers
 
 ## Beitragen
 
@@ -97,4 +96,4 @@ Beiträge sind willkommen! Bitte erstelle ein Issue oder einen Pull Request für
 
 ## Kontakt
 
-Bei Fragen oder Problemen erstelle bitte ein GitHub Issue oder kontaktiere [dein-kontakt@example.com](mailto:dein-kontakt@example.com).
+Bei Fragen oder Problemen erstelle bitte ein GitHub Issue oder kontaktiere [admin@brothertec.eu](mailto:admin@brothertec.eu).
