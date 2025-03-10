@@ -2,25 +2,25 @@
 
 ## Beschreibung
 
-Dieser Prometheus Exporter sammelt Daten von der Träwelling API und stellt sie als Prometheus-Metriken bereit. Er bietet detaillierte Informationen über aktuelle Züge, Gesamtdistanz, Gesamtdauer und Gesamtpunkte für jeden Benutzer.
+Dieser Prometheus Exporter sammelt Daten von der Träwelling API und stellt sie als Prometheus-Metriken zur Verfügung. Er bietet detaillierte Informationen über aktuelle Züge, einschließlich Zugtyp und Fahrtart (privat, geschäftlich, Pendelverkehr), sowie Gesamtstatistiken wie Gesamtdistanz, Gesamtdauer und Gesamtpunkte für jeden Benutzer.
 
 ## Funktionen
 
 - Abfrage der Träwelling API für aktuelle Zugdaten und Benutzerdetails
 - Bereitstellung von Prometheus-Metriken für:
-  - Aktuelle Zugstatus (aktiv/inaktiv)
-  - Gesamte Zugstrecke pro Benutzer
-  - Gesamte Zugdauer pro Benutzer
-  - Gesamtpunkte pro Benutzer
-- Unterstützung für mehrere Benutzernamen
+  - Aktuelle Zugstatus (aktiv/inaktiv) mit Zugtyp und Fahrtart
+  - Gesamte Zugstrecke eines Benutzers in Kilometern
+  - Gesamte Zugdauer eines Benutzers in Minuten
+  - Gesamtpunkte eines Benutzers
+- Konsolenausgabe detaillierter Zuginformationen
 - Regelmäßige Aktualisierung der Daten (alle 5 Minuten)
 
 ## Voraussetzungen
 
-- Go 1.20 oder höher
+- Go 1.15 oder höher
 - Docker und Docker Compose (für containerisierte Ausführung)
 - Gültiger Träwelling API-Token
-- Benutzernamen der zu überwachenden Nutzer
+- Liste der Benutzernamen, die abgefragt werden sollen
 
 ## Installation
 
@@ -37,10 +37,10 @@ Dieser Prometheus Exporter sammelt Daten von der Träwelling API und stellt sie 
    go get github.com/prometheus/client_golang/prometheus/promhttp
    ```
 
-3. Erstelle eine `.env` Datei im Projektverzeichnis und füge deine Umgebungsvariablen hinzu:
+3. Erstelle eine `.env` Datei im Projektverzeichnis und füge deinen Träwelling API-Token sowie die Liste der Benutzernamen hinzu:
    ```
-   TRAEWELLING_TOKEN=your_token
-   TRAEWELLING_USERNAMES=
+   TRAEWELLING_TOKEN=your_token_here
+   TRAEWELLING_USERNAMES=user1,user2,user3
    ```
 
 ## Ausführung
@@ -69,9 +69,14 @@ Dieser Prometheus Exporter sammelt Daten von der Träwelling API und stellt sie 
    docker-compose up -d
    ```
 
+## Verwendung
+
+Nach dem Start ist der Exporter unter `http://localhost:8080/metrics` erreichbar. Prometheus kann so konfiguriert werden, dass es diese Endpunkt abfragt.
+
 ## Prometheus Konfiguration
 
 Füge folgende Job-Konfiguration zu deiner `prometheus.yml` hinzu:
+
 ```
 scrape_configs:
   - job_name: 'traewelling'
@@ -81,10 +86,21 @@ scrape_configs:
 
 ## Metriken
 
-- `traewelling_current_train_statuses`: Aktueller Status eines Zuges (1 = aktiv, 0 = inaktiv)
-- `traewelling_total_train_distance_km`: Gesamte Zugstrecke eines Benutzers in Kilometern
-- `traewelling_total_train_duration_minutes`: Gesamte Zugdauer eines Benutzers in Minuten
-- `traewelling_total_points`: Gesamtpunkte eines Benutzers
+- **`traewelling_current_train_statuses`**:
+  - Labels:
+    - `username`: Der Benutzername.
+    - `line_name`: Die Linie des Zuges (z. B. S3).
+    - `origin`: Startbahnhof.
+    - `destination`: Zielbahnhof.
+    - `train_type`: Typ des Zuges (z. B. "national", "regional", etc.).
+    - `trip_type`: Art der Fahrt (z. B. "personal", "business", "commute").
+  - Wert:
+    - **`1`**: Der Zug ist aktiv.
+    - **`0`**: Der Zug ist inaktiv.
+
+- **`traewelling_total_train_distance_km`**: Gesamte Zugstrecke eines Benutzers in Kilometern.
+- **`traewelling_total_train_duration_minutes`**: Gesamte Zugdauer eines Benutzers in Minuten.
+- **`traewelling_total_points`**: Gesamtpunkte eines Benutzers.
 
 ## Beitragen
 
