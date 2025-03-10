@@ -57,21 +57,7 @@ var (
 			Name: "traewelling_current_train_statuses",
 			Help: "Zeigt an, ob ein Zug aktiv ist (1 = aktiv, 0 = inaktiv)",
 		},
-		[]string{"username", "line_name", "origin", "destination"},
-	)
-	currentTrainTypes = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "traewelling_current_train_types",
-			Help: "Typ des aktuellen Zuges",
-		},
-		[]string{"username", "line_name", "origin", "destination", "train_type"},
-	)
-	currentTripTypes = promauto.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "traewelling_current_trip_types",
-			Help: "Art der Fahrt (0 = privat, 1 = geschäftlich, 2 = Pendelverkehr)",
-		},
-		[]string{"username", "line_name", "origin", "destination", "trip_type"},
+		[]string{"username", "line_name", "origin", "destination", "train_type", "trip_type"},
 	)
 	totalTrainDistance = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -201,21 +187,6 @@ func updateMetricsForUser(username string) {
 	for _, trip := range statusData.Data {
         active := isTrainActive(trip.Train.Origin.DepartureReal, trip.Train.Destination.ArrivalReal)
 
-        currentTrainStatuses.WithLabelValues(
-            username,
-            trip.Train.LineName,
-            trip.Train.Origin.Name,
-            trip.Train.Destination.Name,
-        ).Set(func() float64 { if active { return 1 } else { return 0 } }())
-
-        currentTrainTypes.WithLabelValues(
-            username,
-            trip.Train.LineName,
-            trip.Train.Origin.Name,
-            trip.Train.Destination.Name,
-            trip.Train.Category,
-        ).Set(1) // Typ des aktuellen Zuges
-
         tripType := "unknown"
         switch trip.Train.TripType {
         case 0:
@@ -226,13 +197,14 @@ func updateMetricsForUser(username string) {
             tripType = "commute"
         }
 
-        currentTripTypes.WithLabelValues(
+        currentTrainStatuses.WithLabelValues(
             username,
             trip.Train.LineName,
             trip.Train.Origin.Name,
             trip.Train.Destination.Name,
+            trip.Train.Category,
             tripType,
-        ).Set(1) // Art der Fahrt
+        ).Set(func() float64 { if active { return 1 } else { return 0 } }())
     }
 
 	totalTrainDistance.WithLabelValues(username).Set(float64(userDetails.Data.TrainDistance) / 1000)
