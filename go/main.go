@@ -172,6 +172,19 @@ func isTrainActive(departureTimeStr, arrivalTimeStr string) bool {
 	return now.After(departureTime) && now.Before(arrivalTime)
 }
 
+func getTripType(tripType int) string {
+	switch tripType {
+	case 0:
+		return "personal"
+	case 1:
+		return "business"
+	case 2:
+		return "commute"
+	default:
+		return "unknown"
+	}
+}
+
 func updateMetricsForUser(username string) {
 	statusData, err := fetchStatuses(username)
 	if err != nil {
@@ -189,15 +202,7 @@ func updateMetricsForUser(username string) {
 	for key := range existingTrips {
 		found := false
 		for _, trip := range statusData.Data {
-			tripType := "unknown"
-			switch trip.Train.TripType {
-			case 0:
-				tripType = "personal"
-			case 1:
-				tripType = "business"
-			case 2:
-				tripType = "commute"
-			}
+			tripType := getTripType(trip.Train.TripType)
 			tripKey := fmt.Sprintf("%s_%s_%s_%s_%s_%s", username, trip.Train.LineName, trip.Train.Origin.Name, trip.Train.Destination.Name, trip.Train.Category, tripType)
 			if key == tripKey {
 				found = true
@@ -212,15 +217,7 @@ func updateMetricsForUser(username string) {
 	for _, trip := range statusData.Data {
 		active := isTrainActive(trip.Train.Origin.DepartureReal, trip.Train.Destination.ArrivalReal)
 
-		tripType := "unknown"
-		switch trip.Train.TripType {
-		case 0:
-			tripType = "personal"
-		case 1:
-			tripType = "business"
-		case 2:
-			tripType = "commute"
-		}
+		tripType := getTripType(trip.Train.TripType)
 
 		key := fmt.Sprintf("%s_%s_%s_%s_%s_%s", username, trip.Train.LineName, trip.Train.Origin.Name, trip.Train.Destination.Name, trip.Train.Category, tripType)
 
@@ -229,20 +226,20 @@ func updateMetricsForUser(username string) {
 			continue
 		}
 
-		metric := currentTrainStatuses.WithLabelValues(
+		currentTrainStatuses.WithLabelValues(
 			username,
 			trip.Train.LineName,
 			trip.Train.Origin.Name,
 			trip.Train.Destination.Name,
 			trip.Train.Category,
 			tripType,
-		)
-
-		if active {
-			metric.Set(1)
-		} else {
-			metric.Set(0)
-		}
+		).Set(func() float64 {
+			if active {
+				return 1
+			} else {
+				return 0
+			}
+		}())
 
 		existingTrips[key] = true
 
