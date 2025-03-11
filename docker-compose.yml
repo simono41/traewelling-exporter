@@ -12,6 +12,7 @@ services:
     environment:
       - TRAEWELLING_TOKEN=${TRAEWELLING_TOKEN}
       - TRAEWELLING_USERNAMES=${TRAEWELLING_USERNAMES}
+      - PORT=8080
     networks:
       default:
       dns:

@@ -287,6 +287,10 @@ func main() {
 	}()
 
 	http.Handle("/metrics", promhttp.Handler())
-	fmt.Println("Server läuft auf Port 8080...")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080" // Standardport
+	}
+	fmt.Printf("Server läuft auf Port %s...\n", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
