@@ -153,6 +153,7 @@ func fetchUserDetails(username string) (*UserDetailsResponse, error) {
 
 func isTrainActive(departureTimeStr, arrivalTimeStr string) bool {
 	if departureTimeStr == "" || arrivalTimeStr == "" {
+		log.Printf("Unbekannter Fehler beim Parsen der Abfahrts oder Ankunftszeit!")
 		return false
 	}
 
@@ -215,7 +216,7 @@ func updateMetricsForUser(username string) {
 	}
 
 	for _, trip := range statusData.Data {
-		active := isTrainActive(trip.Train.Origin.DepartureReal, trip.Train.Destination.ArrivalReal)
+		active := isTrainActive(trip.Train.Origin.DeparturePlanned, trip.Train.Destination.ArrivalPlanned)
 
 		tripType := getTripType(trip.Train.TripType)
 
