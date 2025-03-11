@@ -80,6 +80,7 @@ var (
 		},
 		[]string{"username"},
 	)
+	existingTrips = map[string]bool{}
 )
 
 func fetchStatuses(username string) (*StatusResponse, error) {
@@ -184,6 +185,30 @@ func updateMetricsForUser(username string) {
 		return
 	}
 
+	// Bereinige die existingTrips-Map
+	for key := range existingTrips {
+		found := false
+		for _, trip := range statusData.Data {
+			tripType := "unknown"
+			switch trip.Train.TripType {
+			case 0:
+				tripType = "personal"
+			case 1:
+				tripType = "business"
+			case 2:
+				tripType = "commute"
+			}
+			tripKey := fmt.Sprintf("%s_%s_%s_%s_%s_%s", username, trip.Train.LineName, trip.Train.Origin.Name, trip.Train.Destination.Name, trip.Train.Category, tripType)
+			if key == tripKey {
+				found = true
+				break
+			}
+		}
+		if !found {
+			delete(existingTrips, key)
+		}
+	}
+
 	for _, trip := range statusData.Data {
 		active := isTrainActive(trip.Train.Origin.DepartureReal, trip.Train.Destination.ArrivalReal)
 
@@ -197,20 +222,29 @@ func updateMetricsForUser(username string) {
 			tripType = "commute"
 		}
 
-		currentTrainStatuses.WithLabelValues(
+		key := fmt.Sprintf("%s_%s_%s_%s_%s_%s", username, trip.Train.LineName, trip.Train.Origin.Name, trip.Train.Destination.Name, trip.Train.Category, tripType)
+
+		if existingTrips[key] {
+			log.Printf("Fahrt %s für Benutzer '%s' bereits vorhanden, überspringe...\n", trip.Train.LineName, username)
+			continue
+		}
+
+		metric := currentTrainStatuses.WithLabelValues(
 			username,
 			trip.Train.LineName,
 			trip.Train.Origin.Name,
 			trip.Train.Destination.Name,
 			trip.Train.Category,
 			tripType,
-		).Set(func() float64 {
-			if active {
-				return 1
-			} else {
-				return 0
-			}
-		}())
+		)
+
+		if active {
+			metric.Set(1)
+		} else {
+			metric.Set(0)
+		}
+
+		existingTrips[key] = true
 
 		if active {
 			log.Printf("Aktive Verbindung für Benutzer '%s':\n", username)
